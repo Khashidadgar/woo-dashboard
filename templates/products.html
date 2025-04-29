@@ -1,0 +1,443 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مدیریت محصولات</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+    <style>
+    @font-face {
+        font-family: 'Vazir';
+        src: url('/static/fonts/Vazir-Regular.woff2') format('woff2'),
+             url('/static/fonts/Vazir-Regular.woff') format('woff'),
+             url('/static/fonts/Vazir-Regular.ttf') format('ttf');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap; /* برای بهبود لود فونت */
+    }
+    body { font-family: 'Vazir', Arial, sans-serif; }
+    .error { color: red; display: none; } /* برای index.html و register.html */
+    .ql-editor { direction: rtl; text-align: right; } /* فقط برای products.html */
+    .loading { 
+        display: none; 
+        position: fixed; 
+        top: 50%; 
+        left: 50%; 
+        transform: translate(-50%, -50%); 
+        background: rgba(0,0,0,0.7); 
+        color: white; 
+        padding: 20px; 
+        border-radius: 5px; 
+        z-index: 1001; 
+    } /* برای products.html */
+    .modal { 
+        display: none; 
+        position: fixed; 
+        top: 50%; 
+        left: 50%; 
+        transform: translate(-50%, -50%); 
+        background: white; 
+        padding: 20px; 
+        border-radius: 8px; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+        z-index: 1000; 
+        width: 80%; 
+        max-width: 600px; 
+    } /* برای products.html */
+    .modal-overlay { 
+        display: none; 
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        width: 100%; 
+        height: 100%; 
+        background: rgba(0,0,0,0.5); 
+        z-index: 999; 
+    } /* برای products.html */
+</style>
+</head>
+<body class="bg-gray-100">
+    <div class="container">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold">مدیریت محصولات ووکامرس</h2>
+            <a href="/dashboard" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center">
+                <i class="fas fa-arrow-right ml-2"></i> بازگشت به داشبورد
+            </a>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow-lg">
+            <div class="mb-4">
+                <label for="category-filter" class="block text-gray-700">فیلتر بر اساس دسته‌بندی:</label>
+                <select id="category-filter" onchange="filterByCategory()" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">همه دسته‌بندی‌ها</option>
+                    {% for category in categories %}
+                    <option value="{{ category['id'] }}">{{ category['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <form id="products-form" method="POST" action="/products">
+                <table id="products-table" class="display w-full">
+                    <thead class="bg-gray-200">
+                        <tr>
+                            <th class="p-3">ID</th>
+                            <th class="p-3">نام محصول</th>
+                            <th class="p-3">وضعیت</th>
+                            <th class="p-3">قیمت معمولی</th>
+                            <th class="p-3">قیمت حراج</th>
+                            <th class="p-3">مدیریت موجودی</th>
+                            <th class="p-3">موجودی</th>
+                            <th class="p-3">خلاصه</th>
+                            <th class="p-3">توضیحات کامل</th>
+                            <th class="p-3">دسته‌بندی‌ها</th>
+                            <th class="p-3">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in products %}
+                        <tr data-product-id="{{ product['id'] }}" data-categories-ids="{{ product['categories']|map(attribute='id')|list|tojson }}">
+                            <td class="p-3">{{ product['id'] }}</td>
+                            <td class="p-3">{{ product['name'] }}</td>
+                            <td class="p-3">
+                                <select name="status_{{ product['id'] }}" onchange="markChanged('{{ product['id'] }}')" class="w-full p-2 border rounded">
+                                    <option value="publish" {% if product['status'] == 'publish' %}selected{% endif %}>منتشر شده</option>
+                                    <option value="draft" {% if product['status'] == 'draft' %}selected{% endif %}>پیش‌نویس</option>
+                                    <option value="pending" {% if product['status'] == 'pending' %}selected{% endif %}>در انتظار</option>
+                                    <option value="private" {% if product['status'] == 'private' %}selected{% endif %}>خصوصی</option>
+                                </select>
+                            </td>
+                            <td class="p-3"><input type="text" name="regular_price_{{ product['id'] }}" value="{{ product['regular_price'] }}" onchange="markChanged('{{ product['id'] }}')" class="w-full p-2 border rounded"></td>
+                            <td class="p-3"><input type="text" name="sale_price_{{ product['id'] }}" value="{{ product['sale_price'] if product['sale_price'] else '' }}" onchange="markChanged('{{ product['id'] }}')" class="w-full p-2 border rounded"></td>
+                            <td class="p-3">
+                                <input type="checkbox" name="manage_stock_{{ product['id'] }}"
+                                       {% if product['manage_stock'] %}checked{% endif %}
+                                       onchange="toggleStockField(this, '{{ product['id'] }}'); markChanged('{{ product['id'] }}')" class="h-5 w-5">
+                            </td>
+                            <td class="p-3">
+                                <input type="number" name="stock_quantity_{{ product['id'] }}"
+                                       value="{{ product['stock_quantity'] if product['stock_quantity'] is not none else '' }}"
+                                       {% if not product['manage_stock'] %}disabled{% endif %}
+                                       onchange="markChanged('{{ product['id'] }}')" class="w-full p-2 border rounded">
+                            </td>
+                            <td class="p-3">
+                                <button type="button" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700" onclick="openEditor('short_description', '{{ product['id'] }}')">ویرایش</button>
+                                <input type="hidden" name="short_description_{{ product['id'] }}" value="{{ product['short_description']|replace('\"', '\\\"')|replace('\n', '') }}">
+                            </td>
+                            <td class="p-3">
+                                <button type="button" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700" onclick="openEditor('description', '{{ product['id'] }}')">ویرایش</button>
+                                <input type="hidden" name="description_{{ product['id'] }}" value="{{ product['description']|replace('\"', '\\\"')|replace('\n', '') }}">
+                            </td>
+                            <td class="p-3">
+                                <select name="categories_{{ product['id'] }}[]" multiple onchange="markChanged('{{ product['id'] }}')" class="w-full p-2 border rounded">
+                                    {% for category in categories %}
+                                    <option value="{{ category['id'] }}"
+                                            {% if category['id'] in product['categories']|map(attribute='id') %}selected{% endif %}>
+                                        {{ category['name'] }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td class="p-3">
+                                <button type="button" class="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700" onclick="saveSingleProduct('{{ product['id'] }}')">ذخیره</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="mt-6 text-center">
+                    <button type="button" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700" onclick="showChanges()">ذخیره همه تغییرات</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- مودال ویرایشگر Quill -->
+        <div class="modal-overlay" id="modal-overlay"></div>
+        <div class="modal" id="editor-modal">
+            <h3 id="modal-title" class="text-lg font-semibold mb-4"></h3>
+            <div id="quill-editor" class="border rounded"></div>
+            <div class="mt-4 flex justify-end">
+                <button type="button" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 mr-2" onclick="saveEditor()">ذخیره</button>
+                <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700" onclick="closeEditor()">لغو</button>
+            </div>
+            <input type="hidden" id="current-field">
+            <input type="hidden" id="current-product-id">
+        </div>
+
+        <!-- مودال تأیید تغییرات -->
+        <div class="modal-overlay" id="confirm-overlay"></div>
+        <div class="modal" id="confirm-modal">
+            <h3 class="text-lg font-semibold mb-4">تأیید تغییرات</h3>
+            <div class="max-h-64 overflow-y-auto mb-4">
+                <ul id="changed-products" class="list-disc pl-6"></ul>
+            </div>
+            <div class="flex justify-end">
+                <button type="button" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 mr-2" onclick="confirmChanges()">تأیید و ذخیره</button>
+                <button type="button" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 mr-2" onclick="resetChanges()">بازگردانی تغییرات</button>
+                <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700" onclick="closeConfirmModal()">لغو</button>
+            </div>
+        </div>
+
+        <!-- لودینگ -->
+        <div class="loading" id="loading">در حال دریافت اطلاعات از سرور...</div>
+    </div>
+
+    <script>
+        let changedProducts = {};
+        let quill = null;
+
+        $(document).ready(function() {
+            $('#loading').show();
+            $.ajax({
+                url: window.location.href,
+                type: 'GET',
+                success: function() {
+                    $('#loading').hide();
+                    var table = $('#products-table').DataTable({
+                        "language": { "url": "//cdn.datatables.net/plug-ins/1.13.6/i18n/fa.json" },
+                        "pageLength": 25,
+                        "columnDefs": [
+                            { "searchable": true, "targets": [1] },
+                            { "searchable": false, "targets": "_all" }
+                        ]
+                    });
+                    $('#products-table_filter input').attr('placeholder', 'جستجو در نام محصول...').on('input', function() {
+                        table.column(1).search(this.value, false, true).draw();
+                    });
+                },
+                error: function() {
+                    $('#loading').hide();
+                    alert('خطا در دریافت اطلاعات از سرور');
+                }
+            });
+
+            quill = new Quill('#quill-editor', {
+                theme: 'snow',
+                modules: {
+                    toolbar: [
+                        ['bold', 'italic', 'underline'],
+                        [{'list': 'ordered'}, {'list': 'bullet'}],
+                        ['link']
+                    ]
+                },
+                direction: 'rtl'
+            });
+        });
+
+        function filterByCategory() {
+            var selectedCategoryId = $('#category-filter').val();
+            $.fn.dataTable.ext.search.push(
+                function(settings, data, dataIndex) {
+                    var row = $('#products-table').DataTable().row(dataIndex);
+                    var categories = JSON.parse(row.node().getAttribute('data-categories-ids') || '[]');
+                    return selectedCategoryId === '' || categories.includes(Number(selectedCategoryId));
+                }
+            );
+            $('#products-table').DataTable().draw();
+            $.fn.dataTable.ext.search.pop();
+        }
+
+        function toggleStockField(checkbox, productId) {
+            var stockField = document.querySelector(`input[name="stock_quantity_${productId}"]`);
+            stockField.disabled = !checkbox.checked;
+            if (!checkbox.checked) stockField.value = '';
+        }
+
+        function markChanged(productId) {
+            var form = document.getElementById('products-form');
+            var formData = new FormData(form);
+            var data = {};
+            ['regular_price', 'sale_price', 'manage_stock', 'stock_quantity', 'short_description', 'description', 'categories', 'status'].forEach(field => {
+                if (field === 'categories') {
+                    var categories = formData.getAll(`categories_${productId}[]`);
+                    if (categories.length) data[field] = categories;
+                } else if (field === 'manage_stock') {
+                    data[field] = formData.get(`manage_stock_${productId}`) ? 'on' : '';
+                } else {
+                    var value = formData.get(`${field}_${productId}`);
+                    if (value !== null) data[field] = value;
+                }
+            });
+            changedProducts[productId] = data;
+        }
+
+        function openEditor(field, productId) {
+            var modal = document.getElementById('editor-modal');
+            var overlay = document.getElementById('modal-overlay');
+            var title = document.getElementById('modal-title');
+            var currentField = document.getElementById('current-field');
+            var currentProductId = document.getElementById('current-product-id');
+            var inputField = document.querySelector(`input[name="${field}_${productId}"]`);
+
+            title.textContent = field === 'short_description' ? 'ویرایش خلاصه' : 'ویرایش توضیحات کامل';
+            currentField.value = field + '_' + productId;
+            currentProductId.value = productId;
+
+            modal.style.display = 'block';
+            overlay.style.display = 'block';
+            quill.root.innerHTML = inputField.value || '';
+        }
+
+        function saveEditor() {
+            var editorContent = quill.root.innerHTML;
+            var field = document.getElementById('current-field').value;
+            var productId = document.getElementById('current-product-id').value;
+            var inputField = document.querySelector(`input[name="${field}"]`);
+            inputField.value = editorContent;
+            markChanged(productId);
+            closeEditor();
+        }
+
+        function closeEditor() {
+            document.getElementById('editor-modal').style.display = 'none';
+            document.getElementById('modal-overlay').style.display = 'none';
+            quill.root.innerHTML = '';
+        }
+
+        function showChanges() {
+            var updates = Object.keys(changedProducts).map(productId => ({
+                product_id: productId,
+                data: changedProducts[productId]
+            }));
+            if (updates.length === 0) {
+                alert('هیچ تغییری برای ذخیره وجود ندارد!');
+                return;
+            }
+
+            var changedProductsList = document.getElementById('changed-products');
+            changedProductsList.innerHTML = '';
+            updates.forEach(update => {
+                var productId = update.product_id;
+                var productName = $(`tr[data-product-id="${productId}"] td:nth-child(2)`).text().trim();
+                var li = document.createElement('li');
+                li.textContent = `${productId}: ${productName}`;
+                changedProductsList.appendChild(li);
+            });
+
+            document.getElementById('confirm-modal').style.display = 'block';
+            document.getElementById('confirm-overlay').style.display = 'block';
+        }
+
+        function resetChanges() {
+            $('#loading').text('در حال بازگردانی تغییرات...').show();
+            var productIds = Object.keys(changedProducts);
+            productIds.forEach(productId => {
+                $.ajax({
+                    url: '/get_product/' + productId,
+                    type: 'GET',
+                    async: false,
+                    success: function(response) {
+                        var productData = response;
+                        $(`select[name="status_${productId}"]`).val(productData.status);
+                        $(`input[name="regular_price_${productId}"]`).val(productData.regular_price);
+                        $(`input[name="sale_price_${productId}"]`).val(productData.sale_price || '');
+                        $(`input[name="manage_stock_${productId}"]`).prop('checked', productData.manage_stock);
+                        var stockField = $(`input[name="stock_quantity_${productId}"]`);
+                        stockField.val(productData.stock_quantity || '');
+                        stockField.prop('disabled', !productData.manage_stock);
+                        $(`input[name="short_description_${productId}"]`).val(productData.short_description || '');
+                        $(`input[name="description_${productId}"]`).val(productData.description || '');
+                        var categorySelect = $(`select[name="categories_${productId}[]"]`);
+                        categorySelect.val(productData.categories.map(cat => cat.id));
+                    }
+                });
+            });
+            changedProducts = {};
+            $('#loading').hide();
+            closeConfirmModal();
+            alert('تغییرات بازگردانی شدند!');
+        }
+
+        function confirmChanges() {
+            closeConfirmModal();
+            var updates = Object.keys(changedProducts).map(productId => ({
+                product_id: productId,
+                data: changedProducts[productId]
+            }));
+            $('#loading').text('در حال به‌روزرسانی...').show();
+            $.ajax({
+                url: '/update_products',
+                type: 'POST',
+                data: JSON.stringify(updates),
+                contentType: 'application/json',
+                success: function(response) {
+                    $('#loading').hide();
+                    alert(`${response.updated.length} محصول با موفقیت به‌روزرسانی شد!`);
+                    changedProducts = {};
+                },
+                error: function(xhr) {
+                    $('#loading').hide();
+                    alert('خطا در به‌روزرسانی محصولات: ' + xhr.responseText);
+                }
+            });
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirm-modal').style.display = 'none';
+            document.getElementById('confirm-overlay').style.display = 'none';
+        }
+
+        function saveSingleProduct(productId) {
+            var data = changedProducts[productId] || {};
+            $('#loading').text('در حال به‌روزرسانی...').show();
+            $.ajax({
+                url: '/update_product/' + productId,
+                type: 'POST',
+                data: JSON.stringify(data),
+                contentType: 'application/json',
+                success: function(response) {
+                    $('#loading').hide();
+                    alert('محصول با موفقیت به‌روزرسانی شد!');
+                    delete changedProducts[productId];
+                },
+                error: function(xhr) {
+                    $('#loading').hide();
+                    alert('خطا در به‌روزرسانی محصول: ' + xhr.responseText);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
