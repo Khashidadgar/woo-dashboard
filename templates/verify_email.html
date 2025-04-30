@@ -3,39 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ثبت‌نام</title>
+    <title>تأیید ایمیل</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div class="container">
-        <h1>ثبت‌نام</h1>
-        <form id="register-form">
-            <input type="email" name="email" placeholder="ایمیل" required>
-            <input type="password" name="password" placeholder="کلمه عبور" required>
-            <button type="submit">ثبت‌نام</button>
+        <h1>تأیید ایمیل</h1>
+        <p>کد تأیید به {{ email }} ارسال شد.</p>
+        <form id="verify-form">
+            <input type="text" name="code" placeholder="کد تأیید" required>
+            <button type="submit">تأیید</button>
         </form>
         <p id="message"></p>
         <p><a href="/">بازگشت به ورود</a></p>
     </div>
     <script>
-        document.getElementById('register-form').addEventListener('submit', async (e) => {
+        document.getElementById('verify-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             try {
-                const response = await fetch('/register', {
+                const response = await fetch('/verify_email', {
                     method: 'POST',
                     body: formData
                 });
                 const data = await response.json();
                 const message = document.getElementById('message');
-                message.textContent = data.message;
                 if (data.status === 'success') {
                     message.className = 'success';
+                    message.textContent = data.message;
                     setTimeout(() => {
-                        window.location.href = '/verify_email';
+                        window.location.href = '/dashboard';
                     }, 1000);
                 } else {
                     message.className = 'error';
+                    message.textContent = data.message;
                 }
             } catch (error) {
                 console.error('Error:', error);

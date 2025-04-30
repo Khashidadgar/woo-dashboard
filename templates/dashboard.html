@@ -1,162 +1,57 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<!DOCTYPE html>
+<html lang="fa">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>داشبورد</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
     <style>
-    @font-face {
-        font-family: 'Vazir';
-        src: url('/static/fonts/Vazir-Regular.woff2') format('woff2'),
-             url('/static/fonts/Vazir-Regular.woff') format('woff'),
-             url('/static/fonts/Vazir-Regular.ttf') format('ttf');
-        font-weight: normal;
-        font-style: normal;
-        font-display: swap; /* برای بهبود لود فونت */
-    }
-    body { font-family: 'Vazir', Arial, sans-serif; }
-    .error { color: red; display: none; } /* برای index.html و register.html */
-    .ql-editor { direction: rtl; text-align: right; } /* فقط برای products.html */
-    .loading { 
-        display: none; 
-        position: fixed; 
-        top: 50%; 
-        left: 50%; 
-        transform: translate(-50%, -50%); 
-        background: rgba(0,0,0,0.7); 
-        color: white; 
-        padding: 20px; 
-        border-radius: 5px; 
-        z-index: 1001; 
-    } /* برای products.html */
-    .modal { 
-        display: none; 
-        position: fixed; 
-        top: 50%; 
-        left: 50%; 
-        transform: translate(-50%, -50%); 
-        background: white; 
-        padding: 20px; 
-        border-radius: 8px; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-        z-index: 1000; 
-        width: 80%; 
-        max-width: 600px; 
-    } /* برای products.html */
-    .modal-overlay { 
-        display: none; 
-        position: fixed; 
-        top: 0; 
-        left: 0; 
-        width: 100%; 
-        height: 100%; 
-        background: rgba(0,0,0,0.5); 
-        z-index: 999; 
-    } /* برای products.html */
-</style>
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        #loading .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
 </head>
-<body class="bg-gray-100">
-    <div class="container mx-auto p-4">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold">داشبورد</h2>
-            <a href="/logout" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 flex items-center">
-                <i class="fas fa-sign-out-alt ml-2"></i> خروج
-            </a>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow-lg mb-6">
-            <h3 class="text-xl font-semibold mb-4">اضافه کردن سایت جدید</h3>
-            <form id="add-site-form" method="POST" action="/add_site">
-                <div class="grid grid-cols-1 gap-4">
-                    <div>
-                        <label class="block text-gray-700">آدرس سایت</label>
-                        <input type="url" name="woocommerce_url" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" required>
-                    </div>
-                    <div>
-                        <label class="block text-gray-700">کلید مصرف‌کننده</label>
-                        <input type="text" name="consumer_key" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" required>
-                    </div>
-                    <div>
-                        <label class="block text-gray-700">کلید مخفی</label>
-                        <input type="text" name="consumer_secret" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" required>
-                    </div>
-                </div>
-                <button type="submit" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center">
-                    <i class="fas fa-plus ml-2"></i> اضافه کردن سایت
-                </button>
-            </form>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow-lg">
-            <h3 class="text-xl font-semibold mb-4">سایت‌های شما</h3>
-            {% if sites %}
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {% for site in sites %}
-                <div class="bg-gray-50 p-4 rounded-lg shadow hover:shadow-md transition">
-                    <h4 class="text-lg font-semibold">{{ site.woocommerce_url }}</h4>
-                    <p class="text-gray-600 text-sm">کلید: {{ site.consumer_key[:10] }}...</p>
-                    <button onclick="selectSite({{ site.id }})" class="mt-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 flex items-center">
-                        <i class="fas fa-store ml-2"></i> مدیریت محصولات
-                    </button>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-gray-600">هیچ سایتی اضافه نشده است.</p>
-            {% endif %}
+<body>
+    <div id="loading">
+        <div class="text-center text-white">
+            <div class="spinner-border" role="status"></div>
+            <p id="loading-message">در حال بارگذاری...</p>
         </div>
     </div>
-    <script>
-        function selectSite(siteId) {
-            fetch('/select_site/' + siteId, {
-                method: 'POST'
-            }).then(response => response.json()).then(data => {
-                if (data.status === 'success') {
-                    window.location.href = '/products';
-                } else {
-                    alert('خطا در انتخاب سایت');
-                }
-            });
-        }
-    </script>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">داشبورد</h1>
+        <div class="row">
+            {% for site in sites %}
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ site.name }}</h5>
+                        <p class="card-text">آدرس: {{ site.url }}</p>
+                        <a href="{{ url_for('products', site_id=site.id) }}" class="btn btn-primary">مدیریت محصولات</a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <p class="text-center mt-3">
+            <a href="{{ url_for('add_site') }}" class="btn btn-success">افزودن سایت جدید</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-danger">خروج</a>
+        </p>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
