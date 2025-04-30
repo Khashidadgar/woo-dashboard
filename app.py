@@ -285,7 +285,7 @@ def products(site_id):
     if not site:
         return redirect(url_for('dashboard'))
     return render_template('products.html', site=site)
-
+server = app.server
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
